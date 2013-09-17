@@ -40,7 +40,7 @@ start_link() ->
 init(no_arg) ->
     process_flag(trap_exit, true),
     FlushInterval = get_env(flush_interval),
-    Tags = [folsomite|folsomite_zeta:get_tags()],
+    Tags = [folsomite],
     Ref = erlang:start_timer(FlushInterval, self(), ?TIMER_MSG),
     State = #state{flush_interval = FlushInterval,
                    tags = Tags,
@@ -69,12 +69,8 @@ handle_info(Info, State) ->
     unexpected(info, Info),
     {noreply, State}.
 
-terminate(shutdown, #state{timer_ref = Ref} = State) ->
-    erlang:cancel_timer(Ref),
-    Prefix = State#state.node_prefix,
-    Terminate = folsomite_zeta:host_event(Prefix, "heartbeat",
-                                          1, [{tags, [terminate]}]),
-    zeta:sv_batch([Terminate]);
+terminate(shutdown, #state{timer_ref = Ref} = _State) ->
+    erlang:cancel_timer(Ref);
 
 terminate(_, _) -> ok.
 
@@ -126,15 +122,6 @@ expand(X, NamePrefix) ->
 send_stats(State) ->
     Metrics = get_stats(),
     Timestamp = num2str(unixtime()),
-    Prefix = State#state.node_prefix,
-    Tags = State#state.tags,
-    Heartbeat =
-        folsomite_zeta:host_event(Prefix, "heartbeat",1, [{tags, Tags}]),
-    Events =
-        [Heartbeat|
-         [folsomite_zeta:host_event(Prefix, K, V, [{tags, [transient|Tags]}]) ||
-          {K, V} <- Metrics]],
-    zeta:sv_batch(Events),
     Message = [format1(State#state.node_key, M, Timestamp) || M <- Metrics],
     case folsomite_graphite_client_sup:get_client() of
         {ok, Socket} -> folsomite_graphite_client:send(Socket, Message);
